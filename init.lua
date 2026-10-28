@@ -193,6 +193,7 @@ vim.keymap.set("n", "<leader>m", function()
     local buf = vim.fn.bufadd(header)
     vim.bo[buf].swapfile = false
     vim.fn.bufload(buf)
+    vim.api.nvim_buf_call(buf, function() vim.cmd("checktime") end)   -- reload the header if it changed on disk
 
     -- 2. Ask clangd for the header's symbols
     local params = { textDocument = vim.lsp.util.make_text_document_params(buf) }
@@ -270,3 +271,28 @@ vim.opt.listchars = { leadmultispace = "│   ", tab = "│ " }   -- one guide e
 vim.opt.cursorline = true        -- highlight the cursor's row (you already have this)
 vim.opt.cursorcolumn = true      -- and its column
 
+-- ===== C++ build and run (MSBuild, from a terminal where `padel` loaded vsdev) =====
+vim.opt.makeprg = "msbuild Padel.sln -p:Configuration=Debug -p:Platform=x86 -v:minimal -nologo"
+vim.opt.errorformat = "%\\s%#%f(%l\\,%c): %trror %m,%\\s%#%f(%l\\,%c): %tarning %m"
+
+vim.keymap.set("n", "<leader>b", "<cmd>wall<CR><cmd>make<CR><cmd>cwindow<CR>",
+    { desc = "Save all, build, show errors" })
+
+vim.keymap.set("n", "<leader>e", function()
+  local exe = vim.fn.getcwd() .. "\\Debug\\Padel.exe"
+  if vim.fn.filereadable(exe) == 0 then
+    vim.notify("Not found: " .. exe .. "  (check :pwd)", vim.log.levels.ERROR)
+    return
+  end
+  local output = {}
+  vim.fn.jobstart({ exe }, {
+    cwd = vim.fn.getcwd(),
+    stderr_buffered = true,
+    on_stderr = function(_, data) vim.list_extend(output, data) end,
+    on_exit = function(_, code)
+      if code ~= 0 then
+        vim.notify("Padel exited with code " .. code .. "\n" .. table.concat(output, "\n"), vim.log.levels.WARN)
+      end
+    end,
+  })
+end, { desc = "Run Padel" })
