@@ -22,5 +22,8 @@ function vsdev {
     Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
     Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x86" | Out-Null
 }
-
-function padel    { vsdev; Set-Location E:\cplusplus\Padel }
+$PadelRoot = @('E:\cplusplus\Padel', 'C:\Users\User\cplusplus\Padel') |
+   Where-Object { Test-Path $_ } | Select-Object -First 1
+function padel    { Set-Location $PadelRoot }
+function padelv   { Set-Location $PadelRoot; nvim . }
+function padelrun { Set-Location $PadelRoot; .\Debug\Padel.exe }
