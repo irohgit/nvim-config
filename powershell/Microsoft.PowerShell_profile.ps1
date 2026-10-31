@@ -1,11 +1,5 @@
 $env:VIRTUAL_ENV_DISABLE_PROMPT = 1
 function nvimrc { nvim "$env:LOCALAPPDATA\nvim\init.lua"}
-function prompt {
-   if ($env:VIRTUAL_ENV) {
-       Write-Host "($(Split-Path -Leaf $env:VIRTUAL_ENV)) " -NoNewline -ForegroundColor Green
-   }
-   "$(Split-Path -Leaf $PWD)> "
-}
 Set-PSReadLineKeyHandler -Chord 'Ctrl+Oem1' -Function AcceptSuggestion
 Set-PSReadLineKeyHandler -Chord 'Ctrl+f'    -Function AcceptNextSuggestionWord
 Set-PSReadLineKeyHandler -Chord 'Ctrl+e'    -Function AcceptLine
@@ -27,3 +21,20 @@ $PadelRoot = @('E:\cplusplus\Padel', 'C:\Users\User\cplusplus\Padel') |
 function padel    { Set-Location $PadelRoot }
 function padelv   { Set-Location $PadelRoot; nvim . }
 function padelrun { Set-Location $PadelRoot; .\Debug\Padel.exe }
+function prompt {
+   if ($env:VIRTUAL_ENV) {
+       Write-Host "($(Split-Path -Leaf $env:VIRTUAL_ENV)) " -NoNewline -ForegroundColor Green
+   }
+   $Folder = Split-Path -Leaf $PWD
+   $Branch = git branch --show-current 2>$null
+   if ($Branch) {
+       $Host.UI.RawUI.WindowTitle = "$Folder git:($Branch)"
+       Write-Host "$Folder " -NoNewline
+       Write-Host "git:(" -NoNewline -ForegroundColor DarkGray
+       Write-Host "$Branch" -NoNewline -ForegroundColor Cyan
+       Write-Host ")" -NoNewline -ForegroundColor DarkGray
+       return "> "
+   }
+   $Host.UI.RawUI.WindowTitle = $Folder
+   "$Folder> "
+}
