@@ -108,20 +108,6 @@ local order = { right = "bottom", bottom = "top", top = "right" }
 vim.g.outline_pos = order[vim.g.outline_pos or "right"]    
 print("Outline: " .. vim.g.outline_pos)
 end, { desc = "Switch outline side" })
--- Menu: pick one of my commands from a list
-vim.keymap.set("n", "<leader>m", function()
- local actions = {
-   { "Toggle outline", outline_toggle },
-   { "Edit config",    function() vim.cmd("e $MYVIMRC") end },
-   { "Reload config",  function() vim.cmd("source $MYVIMRC") end },
- }
- vim.ui.select(actions, {
-   prompt = "Run:",
-   format_item = function(a) return a[1] end,
- }, function(choice)
-   if choice then choice[2]() end
- end)
-end, { desc = "My command menu" })
 -- Swap two words: asks for A and B, then A becomes B and B becomes A
 function _G.SwapWords(range)
  local a = vim.fn.input("Swap: ")
@@ -178,6 +164,30 @@ vim.api.nvim_create_autocmd("LspAttach", {
    end,
 })
 
+-- ===== Floating window helper: centred, rounded, dark; q or Esc closes =====
+local function open_float(lines, title)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  local width = #title + 6
+  for _, l in ipairs(lines) do width = math.max(width, vim.fn.strdisplaywidth(l) + 2) end
+  width = math.min(width, vim.o.columns - 4)
+  local height = math.max(1, math.min(#lines, vim.o.lines - 4))
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor", style = "minimal", border = "rounded",
+    width = width, height = height,
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    title = " " .. title .. " ", title_pos = "center",
+  })
+  vim.wo[win].winhighlight = "Normal:Normal,FloatBorder:Normal"   -- same dark background as the code
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].bufhidden = "wipe"
+  local function close() pcall(vim.api.nvim_win_close, win, true) end
+  vim.keymap.set("n", "q", close, { buffer = buf, nowait = true })
+  vim.keymap.set("n", "<Esc>", close, { buffer = buf, nowait = true })
+  vim.api.nvim_create_autocmd("WinLeave", { buffer = buf, once = true, callback = close })
+  return buf, win, close
+end
 -- Workspace_Symbol Shortcut
 -- ===== <leader>m: compact, sorted, coloured outline of the matching header =====
 -- Blue = methods (what the class DOES), green = fields (what it HAS / KNOWS),
@@ -230,14 +240,11 @@ vim.keymap.set("n", "<leader>m", function()
     for _, res in pairs(results) do
         if res.result then walk(res.result, "") end
     end
-
-    -- 5. Show it in a small window on top
-    vim.cmd("topleft new")
-    local out = vim.api.nvim_get_current_buf()
-    vim.api.nvim_buf_set_lines(out, 0, -1, false, lines)
+    -- 5. Show it in the standard floating window, titled with the header's name
+    local out = open_float(lines, vim.fn.fnamemodify(header, ":t"))
 
     -- 6. Colour each whole row by kind (constructors have no group, so they stay white)
-    local groups = { Method = "OutlineMethod", Field = "OutlineField", Class = "OutlineClass" }
+   local groups = { Method = "CheatKey", Field = "CheatFn", Class = "CheatHead" }
     for row, m in ipairs(marks) do
         local group = groups[m.kind]
         if group then
@@ -245,12 +252,6 @@ vim.keymap.set("n", "<leader>m", function()
                 { end_col = m.col + m.len, hl_group = group })
         end
     end
-
-    -- 7. Throwaway, read-only window; q closes it; jump back to the code
-    vim.bo[out].buftype, vim.bo[out].bufhidden, vim.bo[out].modifiable = "nofile", "wipe", false
-    vim.keymap.set("n", "q", "<cmd>close<CR>", { buffer = out, desc = "Close outline" })
-    vim.cmd("resize " .. #lines)
-    vim.cmd("wincmd p")
 end, { desc = "Outline of the matching header" })
 -- Grid Dividers
 
@@ -258,6 +259,7 @@ local ten_ns = vim.api.nvim_create_namespace("ten_lines")
 vim.api.nvim_set_hl(0, "TenLine", { bg = "#1c1f26" })
 vim.api.nvim_create_autocmd({ "BufWinEnter", "TextChanged", "TextChangedI" }, {
     callback = function(a)
+        if vim.bo[a.buf].buftype ~= "" then return end --only "real" files will get the stripe.. so command will not
         vim.api.nvim_buf_clear_namespace(a.buf, ten_ns, 0, -1)
         for l = 9, vim.api.nvim_buf_line_count(a.buf) - 1, 10 do     -- lines 10, 20, 30... (0-based 9, 19, 29)
             vim.api.nvim_buf_set_extmark(a.buf, ten_ns, l, 0, { line_hl_group = "TenLine" })
@@ -272,14 +274,14 @@ vim.opt.cursorline = true        -- highlight the cursor's row (you already have
 vim.opt.cursorcolumn = true      -- and its column
 
 -- ===== C++ build and run (MSBuild, from a terminal where `padel` loaded vsdev) =====
-vim.opt.makeprg = "msbuild Padel.sln -p:Configuration=Debug -p:Platform=x86 -v:minimal -nologo"
+vim.opt.makeprg = "msbuild Padel.sln -p:Configuration=Debug -p:Platform=x64 -v:minimal -nologo"
 vim.opt.errorformat = "%\\s%#%f(%l\\,%c): %trror %m,%\\s%#%f(%l\\,%c): %tarning %m"
 
 vim.keymap.set("n", "<leader>b", "<cmd>wall<CR><cmd>make<CR><cmd>cwindow<CR>",
     { desc = "Save all, build, show errors" })
 
 vim.keymap.set("n", "<leader>e", function()
-  local exe = vim.fn.getcwd() .. "\\Debug\\Padel.exe"
+  local exe = vim.fn.getcwd() .. "\\x64\\Debug\\Padel.exe"
   if vim.fn.filereadable(exe) == 0 then
     vim.notify("Not found: " .. exe .. "  (check :pwd)", vim.log.levels.ERROR)
     return
@@ -296,3 +298,115 @@ vim.keymap.set("n", "<leader>e", function()
     end,
   })
 end, { desc = "Run Padel" })
+
+-- Install l   -- Install lazy.nvim, the plugin manager, if it's missing
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+if not (vim.uv or vim.loop).fs_stat(lazypath) then
+ vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable",
+   "https://github.com/folke/lazy.nvim.git", lazypath })
+end
+vim.opt.rtp:prepend(lazypath)
+
+-- The leader key must be set before plugins load
+vim.g.mapleader = " "
+
+-- Load every plugin file in lua/plugins/
+require("lazy").setup("plugins")
+-- Quit debugging: stop the game, close panels and leftover debug terminals
+vim.keymap.set("n", "<leader>dq", function()
+    require("dap").terminate()
+    require("dapui").close()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.bo[buf].buftype == "terminal" and vim.api.nvim_buf_get_name(buf):match("Padel") then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+end, { desc = "Quit debugging" })
+
+-- Cheat sheet colours: copy the theme's colours, then add bold
+local function bold_copy(name, from)
+ local hl = vim.api.nvim_get_hl(0, { name = from, link = false })
+ vim.api.nvim_set_hl(0, name, { fg = hl.fg, bold = true })
+end
+bold_copy("CheatKey",  "Statement")    -- blue: $ keys
+bold_copy("CheatFn",   "Identifier")   -- green: @ functions
+bold_copy("CheatHead", "String")       -- yellow: headings
+-- ===== <leader>h: cheat sheet of my leader keys ($) and PowerShell functions (@) =====
+local function cheatsheet()
+  local lines = { "Leader = Space, shown as $", "" }
+
+  -- 1. Leader mappings, read live from Neovim
+  local rows, seen = {}, {}
+  for _, mode in ipairs({ "n", "x" }) do
+    for _, km in ipairs(vim.api.nvim_get_keymap(mode)) do
+      local rest = km.lhs:match("^<Space>(.+)") or km.lhs:match("^ (.+)")
+      if rest and not seen[rest] then
+        seen[rest] = true
+        local desc = km.desc or "(no description)"
+        if mode == "x" then desc = desc .. " (visual)" end
+        table.insert(rows, { "$" .. rest, desc })
+      end
+    end
+  end
+  table.sort(rows, function(a, b) return a[1]:lower() < b[1]:lower() end)
+  for _, r in ipairs(rows) do
+    table.insert(lines, string.format("%-8s %s", r[1], r[2]))
+  end
+
+  -- 2. PowerShell functions, read from the shared profile
+  table.insert(lines, "")
+  table.insert(lines, "PowerShell functions, shown as @")
+  table.insert(lines, "")
+  local profile = vim.fn.stdpath("config") .. "/powershell/Microsoft.PowerShell_profile.ps1"
+  if vim.fn.filereadable(profile) == 0 then
+    table.insert(lines, "(profile not found: " .. profile .. ")")
+  else
+    local file = vim.fn.readfile(profile)
+    for i, line in ipairs(file) do
+      local name = line:match("^%s*[Ff]unction%s+([%w_%-]+)")
+      if name then
+        local desc = (i > 1 and file[i - 1]:match("^%s*#%s*(.+)$")) or "(no description)"
+        table.insert(lines, string.format("%-14s %s", "@" .. name, desc))
+      end
+    end
+  end
+
+  -- 3. Show it in a centred floating window
+  local buf = open_float(lines, "Commands")
+  -- 4. Colour: $ keys blue, @ functions green, headings gold
+  for row, l in ipairs(lines) do
+    local word = l:match("^(%S+)")
+    local group = (l:sub(1, 1) == "$" and "CheatKey")
+      or (l:sub(1, 1) == "@" and "CheatFn")
+      or (l ~= "" and "CheatHead")
+    if group then
+      local len = (group == "CheatHead") and #l or #word
+      vim.api.nvim_buf_set_extmark(buf, outline_ns, row - 1, 0, { end_col = len, hl_group = group })
+    end
+  end
+end
+vim.keymap.set("n", "<leader>h", cheatsheet, { desc = "Show my commands" })
+-- Menu: pick one of my commands from a pop-up (number or Enter runs it)
+vim.keymap.set("n", "<leader>M", function()
+  local actions = {
+    { "Toggle outline", outline_toggle },
+    { "Edit config",    function() vim.cmd("e $MYVIMRC") end },
+    { "Show commands",  cheatsheet },
+  }
+  local lines = {}
+  for i, a in ipairs(actions) do lines[i] = string.format("%d  %s", i, a[1]) end
+  local buf, win, close = open_float(lines, "Menu")
+  for row = 1, #lines do
+    vim.api.nvim_buf_set_extmark(buf, outline_ns, row - 1, 0, { end_col = 1, hl_group = "CheatKey" })
+  end
+
+  local function run(i)
+    if not actions[i] then return end
+    close()
+    vim.schedule(actions[i][2])   -- run after the menu has closed, in the window you came from
+  end
+  vim.keymap.set("n", "<CR>", function() run(vim.api.nvim_win_get_cursor(win)[1]) end, { buffer = buf, nowait = true })
+  for i = 1, #actions do
+    vim.keymap.set("n", tostring(i), function() run(i) end, { buffer = buf, nowait = true })
+  end
+end, { desc = "My command menu" })
