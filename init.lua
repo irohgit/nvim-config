@@ -84,6 +84,21 @@ vim.api.nvim_create_autocmd("CursorMoved", {
    end
  end,
 })
+
+-- Read a symbol's declaration straight from the header text, so parameter names show.
+-- clangd's `detail` is the symbol's TYPE, and a function's type has no parameter names.
+local function decl_text(buf, s)
+    local first, last = s.range.start.line, s.range["end"].line   -- "end" is a Lua keyword, so use brackets
+    local src = vim.api.nvim_buf_get_lines(buf, first, last + 1, false)
+    for i, l in ipairs(src) do
+        src[i] = l:gsub("//.*$", "")                    -- drop line comments
+    end
+    local text = table.concat(src, " ")                 -- multi-line declarations become one line
+    text = text:gsub("/%*.-%*/", "")                    -- drop block comments
+    text = text:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")   -- squash whitespace
+    text = text:gsub("%( ", "("):gsub(" %)", ")"):gsub(" ,", ",") -- tidy spaces inside brackets
+    return text
+end
 -- Outline: toggle a right-hand pane listing every def
 local function outline_toggle()
  for _, win in ipairs(vim.fn.getwininfo()) do
@@ -231,7 +246,12 @@ vim.keymap.set("n", "<leader>m", function()
     local function walk(symbols, indent)
         for _, s in ipairs(sorted(symbols)) do
             local kind = kinds[s.kind] or ""
-            local line = string.format("%s%-12s %-20s %s", indent, kind, s.name, s.detail or "")
+            local line
+            if kind == "Method" or kind == "Constructor" then
+                line = string.format("%s%-12s %s", indent, kind, decl_text(buf, s)) -- real declaration, names included
+            else
+                line = string.format("%s%-12s %-20s %s", indent, kind, s.name, s.detail or "") -- fields and the class
+            end
             table.insert(lines, line)
             table.insert(marks, { kind = kind, col = #indent, len = #line - #indent })
             if s.children then walk(s.children, indent .. "  ") end
@@ -410,3 +430,15 @@ vim.keymap.set("n", "<leader>M", function()
     vim.keymap.set("n", tostring(i), function() run(i) end, { buffer = buf, nowait = true })
   end
 end, { desc = "My command menu" })
+vim.keymap.set("n", "<leader>ws", function()
+    vim.lsp.buf.workspace_symbol(vim.fn.input("Symbol: "))
+end, { desc = "Search symbols, including library headers" })
+
+-- Third-party code under External/ is read-only: view it, never edit it.
+vim.api.nvim_create_autocmd("BufReadPost", {
+    pattern = "*/External/*",
+    callback = function()
+        vim.bo.readonly = true      -- warns on :w
+        vim.bo.modifiable = false   -- blocks typing at all
+    end,
+})
