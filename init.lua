@@ -19,7 +19,8 @@ opt.background = "dark"
 opt.termguicolors = true
 opt.guicursor ="n-v-c:hor20,i-ci-ve:ver25,r-cr-o:hor20"
 -- Keys
-vim.keymap.set("i", "jk", "<Esc>")
+vim.keymap.set({"i","c"}, "jk", "<Esc>", {desc = "Escape, from the home row"})
+vim.keymap.set({"i","c"}, "jl", "<CR>",{desc = "Enter, from the home row"})
 -- Move selected lines up and down, re-indenting as they go
 vim.keymap.set("v", "J", ":m '>+1<CR>gv=gv", { desc = "Move selection down" })
 vim.keymap.set("v", "K", ":m '<-2<CR>gv=gv", { desc = "Move selection up" })
@@ -442,3 +443,84 @@ vim.api.nvim_create_autocmd("BufReadPost", {
         vim.bo.modifiable = false   -- blocks typing at all
     end,
 })
+-- Compile, run and show the output of this C++ file in a pop-up (start Neovim from a vsdev shell)
+vim.keymap.set("n", "<leader>c", function()
+  vim.cmd("write")
+  local dir  = vim.fn.expand("%:p:h")
+  local file = vim.fn.expand("%:t")
+  local name = vim.fn.expand("%:t:r")
+  local exe  = dir .. "\\" .. name .. ".exe"
+
+  -- 1. Compile (quick, so Neovim simply waits)
+  local ok, build = pcall(function()
+    return vim.system({ "cl", "/nologo", "/EHsc", "/std:c++17", file }, { cwd = dir, text = true }):wait()
+  end)
+  if not ok then
+    vim.notify("cl not found: start Neovim from a terminal where you ran vsdev", vim.log.levels.ERROR)
+    return
+  end
+  if build.code ~= 0 then
+    open_float(vim.split(build.stdout .. build.stderr, "\n", { trimempty = true }), "Build failed")
+    return
+  end
+
+  -- 2. Ask for the program's input
+  local input = vim.fn.input(name .. " input: ")
+
+  -- 3. Show a live counter while the program runs in its own process
+  local buf, _, close = open_float({ "Running... 0.0 s" }, name)
+  local t0 = vim.uv.hrtime()
+  local timer = vim.uv.new_timer()
+  timer:start(100, 100, vim.schedule_wrap(function()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    local seconds = (vim.uv.hrtime() - t0) / 1e9
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { string.format("Running... %.1f s", seconds) })
+    vim.bo[buf].modifiable = false
+  end))
+
+  -- 4. Run it without freezing Neovim; stop it if it runs longer than 30 seconds
+  vim.system({ exe }, { cwd = dir, stdin = input .. "\n", text = true, timeout = 30000 }, function(run)
+    vim.schedule(function()                      -- back on Neovim's main thread to touch the screen
+      timer:stop()
+      timer:close()
+      close()                                    -- remove the counter
+      local lines = vim.split(run.stdout .. run.stderr, "\n", { trimempty = true })
+      table.insert(lines, "")
+      table.insert(lines, run.code == 124 and "stopped after 30 seconds" or string.format("exit code %d", run.code))
+      open_float(lines, name)                   -- show the program's output
+    end)
+  end)
+end, { desc = "Compile, run and show output in a pop-up" })
+
+-- Comment visibility: Space ` cycles; Space f 1 / f 2 / f 3 jump straight to normal / faded / hidden
+local comment_base = vim.api.nvim_get_hl(0, { name = "Comment", link = false })   -- the theme's own comment colour
+local comment_levels = {
+  { amount = 0,   label = "normal" },
+  { amount = 0.7, label = "faded" },
+  { amount = 1,   label = "hidden" },
+}
+local comment_level = 1                 -- which level is showing now (shared by every key)
+
+local function blend(fg, bg, t)        -- t = 0 gives fg, t = 1 gives bg, 0.5 is halfway
+  local function part(c, shift) return math.floor(c / shift) % 256 end
+  local function mix(shift)
+    return math.floor(part(fg, shift) + (part(bg, shift) - part(fg, shift)) * t + 0.5)
+  end
+  return mix(65536) * 65536 + mix(256) * 256 + mix(1)   -- red, green, blue back into one colour
+end
+
+local function set_comments(level)
+  comment_level = level
+  local bg = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg or 0x1c1c1c
+  local fg = comment_base.fg or 0x808080
+  local hl = { fg = blend(fg, bg, comment_levels[level].amount), italic = comment_base.italic }
+  vim.api.nvim_set_hl(0, "Comment", hl)
+  vim.api.nvim_set_hl(0, "@comment", hl)                   -- the tree-sitter name for comments too
+  vim.notify("Comments: " .. comment_levels[level].label)
+end
+
+vim.keymap.set("n", "<leader>`",  function() set_comments(comment_level % 3 + 1) end, { desc = "Comments: cycle normal, faded, hidden" })
+vim.keymap.set("n", "<leader>f1", function() set_comments(1) end, { desc = "Comments: normal colour" })
+vim.keymap.set("n", "<leader>f2", function() set_comments(2) end, { desc = "Comments: faded halfway into the background" })
+vim.keymap.set("n", "<leader>f3", function() set_comments(3) end, { desc = "Comments: hidden, same colour as the background" })

@@ -13,24 +13,25 @@ Set-PSReadLineKeyHandler -Chord 'Ctrl+Shift+x' -Function DeleteChar
 # Go to the old Lua ping-pong project
 function pingpong {Set-location "E:\Game Development\lua_pingpong"}
 
-# Load the Visual Studio developer shell (64-bit MSVC and MSBuild)
+# Load the Visual Studio developer shell (64-bit MSVC and MSBuild), once per tab
 function vsdev {
-    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-    Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-    Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=amd64" | Out-Null
+   if (Get-Command cl -ErrorAction SilentlyContinue) { return }   # already loaded in this tab
+   $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+   Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+   Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=amd64" | Out-Null
 }
 
 $PadelRoot = @('E:\cplusplus\Padel', 'C:\Users\User\cplusplus\Padel') | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-# Go to the Padel project
-function padel    { Set-Location $PadelRoot }
+# Go to the Padel project, with the compiler loaded
+function padel    { vsdev; Set-Location $PadelRoot }
 
-# Go to Padel and open it in Neovim
-function padelv   { Set-Location $PadelRoot; nvim . }
-
+# Go to Padel, load the compiler and open it in Neovim
+function padelv   { vsdev; Set-Location $PadelRoot; nvim . }
 # Go to Padel and run the x64 Debug build
 function padelrun { Set-Location $PadelRoot; .\x64\Debug\Padel.exe }
-
+# Go to the Algorithms practice folder, with the compiler loaded
+function algo     { vsdev; Set-Location 'E:\cplusplus\Algorithms' }
 $PortfolioRoot = @('E:\tuantriet\tuantriet-portfolio')
     | Where-Object {Test-Path $_} | Select-Object -First 1
 
