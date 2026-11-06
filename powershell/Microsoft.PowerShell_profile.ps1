@@ -66,3 +66,72 @@ function padeltrace {
        Set-Location $PadelRoot
        cdb -G -c "bu Padel!$Fn `"k; g`"; g" .\x64\Debug\Padel.exe
 }
+
+# List a folder with names first
+function ll { Get-ChildItem @args | Format-Table Name, LastWriteTime, Length -AutoSize }
+
+# Go to the Audiokinetic folder (Cube, Wwise and the Fundamentals course)
+function ak { Set-Location 'C:\Audiokinetic' }
+
+# Open a narrow pane on the right, in this folder, already listing it
+function side { wt -w 0 split-pane -V -s 0.45 -d . pwsh -NoExit -Command ll }
+
+# Open a short pane at the bottom, in this folder, already listing it
+function bottom { wt -w 0 split-pane -H -s 0.45 -d . pwsh -NoExit -Command ll }
+
+# Show my last 20 commands, newest at the top
+function hist { Get-History | Sort-Object Id -Descending | Select-Object -First 20 | Format-Table Id, CommandLine -AutoSize }
+
+
+# Go to my Downloads folder, wherever Windows has it
+function dl { Set-Location ((New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path) }
+
+# List the 20 most recently changed items, newest at the bottom
+function llr {
+    param([string]$Path = '.', [int]$Count = 20)
+    Get-ChildItem -Path $Path |
+        Sort-Object LastWriteTime |
+        Select-Object -Last $Count |
+        Format-Table Name, LastWriteTime, Length -AutoSize
+}
+
+# List every item, oldest to newest, newest at the bottom
+function llra {
+    param([string]$Path = '.')
+    Get-ChildItem -Path $Path |
+        Sort-Object LastWriteTime |
+        Format-Table Name, LastWriteTime, Length -AutoSize
+}
+
+
+# Go to cplusplus
+function cplusplus { Set-Location 'E:\cplusplus' }
+
+
+# Open the real PowerShell profile (kept in the nvim repo) in Neovim
+function psrc { nvim "$env:LOCALAPPDATA\nvim\powershell\Microsoft.PowerShell_profile.ps1" }
+
+
+# Move files into a folder, creating it first if needed; add -Go to go there afterwards
+function moveto {
+    param(
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Items,
+        [switch]$Go
+    )
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Move-Item -Path $Items -Destination $Destination
+    if ($Go) { Set-Location $Destination }
+}
+
+# Copy files into a folder, creating it first if needed; add -Go to go there afterwards
+function copyto {
+    param(
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Items,
+        [switch]$Go
+    )
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Copy-Item -Path $Items -Destination $Destination -Recurse
+    if ($Go) { Set-Location $Destination }
+}
